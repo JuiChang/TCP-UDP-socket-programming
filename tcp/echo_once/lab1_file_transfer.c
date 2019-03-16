@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define NUM_CHUNK 20
+#define NUM_CHUNK 7
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -76,7 +76,7 @@ int tcp_send(int argc, char *argv[]){
 
     file = fopen(argv[5], "r");
     if (!file)
-        printf("ERROR : opening file.\n");
+        error("ERROR : opening file.\n");
     
     size_t pos = ftell(file);    // Current position
     fseek(file, 0, SEEK_END);    // Go to end
@@ -111,9 +111,18 @@ int tcp_send(int argc, char *argv[]){
     
     //////// write & read
     while (1) {
+        bzero(buffer_ptr, chunk_size);
         int bytes_read = fread(buffer_ptr, 1, chunk_size, file);
-        //printf("--- %d \n", bytes_read);
-        //print_current_time_with_ms();
+
+        if (bytes_read == 0){
+            n = write(newsockfd, "file transfer finished", 22);
+            if (n < 0) 
+                error("ERROR writing to socket"); 
+            printf("Sender: File transfer finished.\n");
+            break;
+        }
+        printf("--- %d \n", bytes_read);
+
         n = write(newsockfd, buffer_ptr, bytes_read);
         if (n < 0) 
             error("ERROR writing to socket");    
@@ -144,7 +153,7 @@ int tcp_recv(int argc, char *argv[]){
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    char buffer[10000]; // may not enough
+    char buffer[100000]; // may not enough
     int percent = 0;
     FILE *file;
 
@@ -168,7 +177,7 @@ int tcp_recv(int argc, char *argv[]){
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
-    file = fopen("receiver.txt","w");
+    file = fopen("receiver.jpg","w");
     if (file == NULL){
         printf("Unable to create file.\n");
         exit(EXIT_FAILURE);
@@ -178,13 +187,16 @@ int tcp_recv(int argc, char *argv[]){
     struct tm tm = *localtime(&t);
 
     while (1){
-        bzero(buffer,9999);
-        n = read(sockfd,buffer,9999);
+        bzero(buffer,99999);
+        n = read(sockfd, buffer, 99999);
         if (n < 0) 
             error("ERROR reading from socket");
         //printf("%s\n",buffer);
         if (strcmp("file transfer finished", buffer)) {
-            fputs(buffer, file);
+            printf("%lu\n", strlen(buffer));
+            //fputs(buffer, file);
+            fwrite(buffer, 1, 9485, file);
+            printf("buffer : %lu\n", sizeof(buffer));
             percent += 5;               // yet : should send the offset first
             if (percent != 100) {
                 if (percent == 105)
@@ -197,7 +209,6 @@ int tcp_recv(int argc, char *argv[]){
             fclose(file);
             break;
         }
-
         n = write(sockfd,"I got your message",18);
         if (n < 0) 
             error("ERROR writing to socket");
