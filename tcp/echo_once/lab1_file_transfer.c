@@ -121,7 +121,7 @@ int tcp_send(int argc, char *argv[]){
             printf("Sender: File transfer finished.\n");
             break;
         }
-        printf("--- %d \n", bytes_read);
+        //printf("--- %d \n", bytes_read);
 
         n = write(newsockfd, buffer_ptr, bytes_read);
         if (n < 0) 
@@ -132,13 +132,13 @@ int tcp_send(int argc, char *argv[]){
         if (n < 0) 
             error("ERROR reading from socket");
 
-        if ( bytes_read < chunk_size ){
-            n = write(newsockfd, "file transfer finished", 22);
-            if (n < 0) 
-                error("ERROR writing to socket"); 
-            printf("Sender: File transfer finished.\n");
-            break;
-        }
+        // if ( bytes_read < chunk_size ){
+        //     n = write(newsockfd, "file transfer finished", 22);
+        //     if (n < 0) 
+        //         error("ERROR writing to socket"); 
+        //     printf("Sender: File transfer finished.\n");
+        //     break;
+        // }
     }
 
     close(newsockfd);
