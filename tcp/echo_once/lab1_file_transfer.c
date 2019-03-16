@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define NUM_CHUNK 7
+#define NUM_CHUNK 20
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -70,6 +70,7 @@ int tcp_send(int argc, char *argv[]){
     int n;
 
     int chunk_size;
+    int write_size;
     char *buffer_ptr;
     FILE *file;
     size_t nread;
@@ -115,30 +116,25 @@ int tcp_send(int argc, char *argv[]){
         int bytes_read = fread(buffer_ptr, 1, chunk_size, file);
 
         if (bytes_read == 0){
+            write_size = 22;
+            n = write(newsockfd, &write_size, sizeof(write_size));
+            if (n < 0) error("ERROR writing to socket"); 
             n = write(newsockfd, "file transfer finished", 22);
-            if (n < 0) 
-                error("ERROR writing to socket"); 
+            if (n < 0) error("ERROR writing to socket"); 
             printf("Sender: File transfer finished.\n");
             break;
         }
         //printf("--- %d \n", bytes_read);
 
+        write_size = bytes_read;
+        n = write(newsockfd, &write_size, sizeof(write_size));
+        if (n < 0) error("ERROR writing to socket"); 
         n = write(newsockfd, buffer_ptr, bytes_read);
-        if (n < 0) 
-            error("ERROR writing to socket");    
+        if (n < 0) error("ERROR writing to socket");    
 
         bzero(confirm_buffer,255);
         n = read(newsockfd,confirm_buffer,255);
-        if (n < 0) 
-            error("ERROR reading from socket");
-
-        // if ( bytes_read < chunk_size ){
-        //     n = write(newsockfd, "file transfer finished", 22);
-        //     if (n < 0) 
-        //         error("ERROR writing to socket"); 
-        //     printf("Sender: File transfer finished.\n");
-        //     break;
-        // }
+        if (n < 0) error("ERROR reading from socket");
     }
 
     close(newsockfd);
@@ -154,6 +150,7 @@ int tcp_recv(int argc, char *argv[]){
     struct hostent *server;
 
     char buffer[100000]; // may not enough
+    int read_size;
     int percent = 0;
     FILE *file;
 
@@ -187,16 +184,18 @@ int tcp_recv(int argc, char *argv[]){
     struct tm tm = *localtime(&t);
 
     while (1){
+
+        n = read(sockfd, &read_size, sizeof(read_size));
+        if (n < 0) error("ERROR reading from socket");
         bzero(buffer,99999);
         n = read(sockfd, buffer, 99999);
-        if (n < 0) 
-            error("ERROR reading from socket");
+        if (n < 0) error("ERROR reading from socket");
         //printf("%s\n",buffer);
         if (strcmp("file transfer finished", buffer)) {
-            printf("%lu\n", strlen(buffer));
+            //printf("%lu\n", strlen(buffer));
             //fputs(buffer, file);
-            fwrite(buffer, 1, 9485, file);
-            printf("buffer : %lu\n", sizeof(buffer));
+            fwrite(buffer, 1, read_size, file);
+            //printf("buffer : %lu\n", sizeof(buffer));
             percent += 5;               // yet : should send the offset first
             if (percent != 100) {
                 if (percent == 105)
@@ -210,8 +209,7 @@ int tcp_recv(int argc, char *argv[]){
             break;
         }
         n = write(sockfd,"I got your message",18);
-        if (n < 0) 
-            error("ERROR writing to socket");
+        if (n < 0) error("ERROR writing to socket");
     }
 
     close(sockfd);
