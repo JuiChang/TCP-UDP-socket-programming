@@ -31,7 +31,7 @@ void print_current_time_with_ms (void)
         ms = 0;
     }
 
-    printf("Current time: %"PRIdMAX".%03ld seconds since the Epoch\n",
+    printf(" %"PRIdMAX".%03ld \n",
            (intmax_t)s, ms);
 }
 
@@ -86,14 +86,6 @@ int tcp_send(int argc, char *argv[]){
     chunk_size = length / NUM_CHUNK;
     buffer_ptr = (char *)malloc(chunk_size);
 
-    // if (file) {
-    //     while ((nread = fread(buf, 1, sizeof buf, file)) > 0)
-    //         fwrite(buf, 1, nread, stdout);
-    //     if (ferror(file)) {
-    //         /* deal with error */
-    //     }
-    //     fclose(file);
-    // }
 
     //////// create socket and connect with client
 
@@ -106,9 +98,8 @@ int tcp_send(int argc, char *argv[]){
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
-    if (bind(sockfd, (struct sockaddr *) &serv_addr,
-            sizeof(serv_addr)) < 0)
-            error("ERROR on binding");
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        error("ERROR on binding");
     
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
@@ -121,8 +112,8 @@ int tcp_send(int argc, char *argv[]){
     //////// write & read
     while (1) {
         int bytes_read = fread(buffer_ptr, 1, chunk_size, file);
-        printf("--- %d \n", bytes_read);
-        print_current_time_with_ms();
+        //printf("--- %d \n", bytes_read);
+        //print_current_time_with_ms();
         n = write(newsockfd, buffer_ptr, bytes_read);
         if (n < 0) 
             error("ERROR writing to socket");    
@@ -136,16 +127,10 @@ int tcp_send(int argc, char *argv[]){
             n = write(newsockfd, "file transfer finished", 22);
             if (n < 0) 
                 error("ERROR writing to socket"); 
-            printf("tcp_send() loop break\n");
+            printf("Sender: File transfer finished.\n");
             break;
         }
     }
-
-    // bzero(buffer,256);
-    // n = read(newsockfd,buffer,1);
-    // if (n < 0) error("ERROR reading from socket");
-    // printf("Here is the message: %s\n",buffer);
-    // //print_current_time_with_ms();
 
     close(newsockfd);
     close(sockfd);
@@ -160,6 +145,8 @@ int tcp_recv(int argc, char *argv[]){
     struct hostent *server;
 
     char buffer[10000]; // may not enough
+    int percent = 0;
+    FILE *file;
 
     portno = atoi(argv[4]);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -181,16 +168,33 @@ int tcp_recv(int argc, char *argv[]){
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
+    file = fopen("receiver.txt","w");
+    if (file == NULL){
+        printf("Unable to create file.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    time_t t = time(NULL);
+    struct tm tm = *localtime(&t);
+
     while (1){
-        print_current_time_with_ms();
         bzero(buffer,9999);
         n = read(sockfd,buffer,9999);
         if (n < 0) 
             error("ERROR reading from socket");
-        printf("%s\n",buffer);
-
-        if (!strcmp("file transfer finished", buffer)) {
+        //printf("%s\n",buffer);
+        if (strcmp("file transfer finished", buffer)) {
+            fputs(buffer, file);
+            percent += 5;               // yet : should send the offset first
+            if (percent != 100) {
+                if (percent == 105)
+                    percent = 100;
+                printf("%d%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+                print_current_time_with_ms();
+            }
+        } else {
             printf("tcp_recv() loop break\n");
+            fclose(file);
             break;
         }
 
