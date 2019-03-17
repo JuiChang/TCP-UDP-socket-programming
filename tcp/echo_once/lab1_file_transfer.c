@@ -165,7 +165,6 @@ int tcp_send(int argc, char *argv[]) {
         write_size = htonl(bytes_read);
         n = write(clisockfd, &write_size, sizeof(write_size));
         if (n < 0) error("ERROR writing to socket"); 
-        if (DEBUG) printf("write_size = %zu\n", write_size);
         n = write(clisockfd, chunk_buffer, bytes_read);
         if (n < 0) error("ERROR writing to socket");    
 
@@ -241,20 +240,11 @@ int tcp_recv(int argc, char *argv[]){
     }
 
     while (1){
-        if (DEBUG) printf("---------------------\n");
         // read the chunk size
         bzero(&read_size, sizeof(read_size));
-        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
         n = read(sockfd, &read_size, sizeof(read_size));
-        if (DEBUG) printf("SUPPOSE SIZE, n = %d\n", n);
         if (n < 0) error("ERROR reading from socket 2");
-        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
         read_size = ntohl(read_size);
-        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
-        if (DEBUG) {
-            if (read_size != 20229)
-                printf("==============================================================\n");
-        }
 
         if (first_chunk_flag) {
             // the first chunk sent from server has the size (full_chunk_size) mentioned in tcp_send()
@@ -266,7 +256,6 @@ int tcp_recv(int argc, char *argv[]){
         }
 
         // read a chunk   
-
         int count;
         do {
             ioctl(sockfd, FIONREAD, &count);
@@ -274,31 +263,14 @@ int tcp_recv(int argc, char *argv[]){
 
         bzero(chunk_buffer, full_chunk_size);
         n = read(sockfd, chunk_buffer, read_size);
-        if (DEBUG) printf("SUPPOSE CHUNK, n = %d\n", n);
         if (n < 0) error("ERROR reading from socket 3");
 
-        if (DEBUG && n < read_size) printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
-
-        // //if (DEBUG) printf("strlen(chunk_buffer) = %d\n", strlen(chunk_buffer));    
-        // if (n < read_size) {
-            
-        //     //char tmp[read_size];
-        //     //bzero(tmp, read_size);
-        //     //n = read(sockfd, tmp, read_size - n);
-        //     //strcat(chunk_buffer, tmp);
-        //     //if (DEBUG) printf("strlen(chunk_buffer) = %d\n", strlen(chunk_buffer));
-        //     if (DEBUG) printf("SUPPOSE REST-CHUNK, n = %d\n", n);
-        //     if (DEBUG) printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
-        //     if (n < 0) error("ERROR reading from socket 3.1");
-        // }
-    
         if (strcmp("file transfer finished", chunk_buffer)) {
             // transfering haven't finished, 
 
             // fwrite chunk_buffer with read_size byte to receiver.X
             // (the main reason of reading the size of the following chunk every time is to
             // fwrite with the correct size, otherwise, img file may be damaged)
-            if (DEBUG) printf("before fwrite(), read_size = %d\n", read_size);
             fwrite(chunk_buffer, 1, read_size, file);
 
             // show percentage and sys time(in microsecond)
