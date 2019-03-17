@@ -27,7 +27,7 @@
     } while (0)
 
 
-void print_current_time_with_ms (void);
+void print_current_time_with_us (void);
 void error(const char *msg);
 const char *get_filename_ext(const char *filename);
 
@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void print_current_time_with_ms (void) {
+void print_current_time_with_us (void) {
     long            ms; // Microseconds
     time_t          s;  // Seconds
     struct timespec spec;
@@ -64,8 +64,7 @@ void print_current_time_with_ms (void) {
         ms = 0;
     }
 
-    printf(" %"PRIdMAX".%03ld \n",
-           (intmax_t)s, ms);
+    printf(" %"PRIdMAX".%03ld \n", (intmax_t)s, ms);
 }
 
 void error(const char *msg) {
@@ -81,30 +80,30 @@ const char *get_filename_ext(const char *filename) {
 
 int tcp_send(int argc, char *argv[]) {
 
-    int sockfd, newsockfd, portno;
+    int sockfd, clisockfd, portno;
     socklen_t clilen;
-    char confirm_buffer[256];
     struct sockaddr_in serv_addr, cli_addr;
     int n;
 
     int chunk_size;
-    int write_size;
-    char *buffer_ptr;
-    char file_ext[10];
+    char file_ext[10]; // file extension of the input file
+    int write_size; // the third argument sent to write()
+    char *chunk_buffer; // save the file chunk to write to client later
+    char confirm_buffer[256];
     FILE *file;
-    size_t nread;
 
     file = fopen(argv[5], "r");
     if (!file)
         error("ERROR : opening file.\n");
     
+    // determine file length, chunk_size, then malloc chunk_buffer 
     size_t pos = ftell(file);    // Current position
     fseek(file, 0, SEEK_END);    // Go to end
     size_t length = ftell(file); // read the position which is the size
     fseek(file, pos, SEEK_SET);  // restore original position
     printf("length = %zu\n", length);
     chunk_size = length / NUM_CHUNK;
-    buffer_ptr = (char *)malloc(chunk_size);
+    chunk_buffer = (char *)malloc(chunk_size);
 
 
     //////// create socket and connect with client
@@ -123,47 +122,51 @@ int tcp_send(int argc, char *argv[]) {
     
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
-    newsockfd = accept(sockfd,
+    clisockfd = accept(sockfd,
                 (struct sockaddr *) &cli_addr,
-                &clilen); // newsockfd is the file descriptor for the accepted socket.
-    if (newsockfd < 0)
+                &clilen); // clisockfd is the file descriptor for the accepted socket.
+    if (clisockfd < 0)
         error("ERROR on accept");
     
     //////// write & read
 
-    // send file extension
+    // send file extension to client
     bzero(file_ext, sizeof(file_ext));
     strcpy(file_ext, get_filename_ext(argv[5]));  
-    n = write(newsockfd, &file_ext, sizeof(file_ext));
+    n = write(clisockfd, &file_ext, sizeof(file_ext));
     if (n < 0) error("ERROR writing to socket");
 
     while (1) {
-        bzero(buffer_ptr, chunk_size);
-        int bytes_read = fread(buffer_ptr, 1, chunk_size, file);
+
+        // fread a file chunk to chunk_buffer
+        bzero(chunk_buffer, chunk_size);
+        int bytes_read = fread(chunk_buffer, 1, chunk_size, file);
 
         if (bytes_read == 0){
+            // fread done, tell clinet that transfering is finished.
             write_size = 22;
-            n = write(newsockfd, &write_size, sizeof(write_size));
+            n = write(clisockfd, &write_size, sizeof(write_size));
             if (n < 0) error("ERROR writing to socket"); 
-            n = write(newsockfd, "file transfer finished", 22);
+            n = write(clisockfd, "file transfer finished", 22);
             if (n < 0) error("ERROR writing to socket"); 
             printf("Sender: File transfer finished.\n");
             break;
         }
-        //printf("--- %d \n", bytes_read);
 
+        // write a file chunk to client (sending the chunk size first)
         write_size = bytes_read;
-        n = write(newsockfd, &write_size, sizeof(write_size));
+        n = write(clisockfd, &write_size, sizeof(write_size));
         if (n < 0) error("ERROR writing to socket"); 
-        n = write(newsockfd, buffer_ptr, bytes_read);
+        n = write(clisockfd, chunk_buffer, bytes_read);
         if (n < 0) error("ERROR writing to socket");    
 
+        // read confirm message from client
         bzero(confirm_buffer,255);
-        n = read(newsockfd,confirm_buffer,255);
+        n = read(clisockfd,confirm_buffer,255);
         if (n < 0) error("ERROR reading from socket");
     }
 
-    close(newsockfd);
+    close(clisockfd);
     close(sockfd);
 
     return 0;
@@ -176,7 +179,7 @@ int tcp_recv(int argc, char *argv[]){
     struct hostent *server;
 
     int read_size;
-    char buffer[100000]; // may not enough
+    char chunk_buffer[100000];
     char file_ext[10];
     char file_name[50];
     FILE *file;
@@ -185,17 +188,22 @@ int tcp_recv(int argc, char *argv[]){
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
 
+    ////// create socket and connect to server
+
+    // create socket
     portno = atoi(argv[4]);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) 
         error("ERROR opening socket");
 
+    // get server's host name
     server = gethostbyname(argv[3]);
     if (server == NULL) {
         fprintf(stderr,"ERROR, no such host\n");
         exit(0);
     }
 
+    // connect to server
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
@@ -205,6 +213,9 @@ int tcp_recv(int argc, char *argv[]){
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
 
+
+    ////// recv file extension and open receiver.X
+
     // recv file extension
     bzero(file_ext,sizeof(file_ext));
     n = read(sockfd, &file_ext, sizeof(file_ext));
@@ -212,6 +223,7 @@ int tcp_recv(int argc, char *argv[]){
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
 
+    // open receiver.X
     file = fopen(file_name,"w");
     if (file == NULL){
         printf("Unable to create file.\n");
@@ -219,28 +231,33 @@ int tcp_recv(int argc, char *argv[]){
     }
 
     while (1){
-
+        
+        // read the chunk size
         n = read(sockfd, &read_size, sizeof(read_size));
         if (n < 0) error("ERROR reading from socket");
-        bzero(buffer,99999);
-        n = read(sockfd, buffer, 99999);
+        // read a chunk
+        bzero(chunk_buffer,99999);
+        n = read(sockfd, chunk_buffer, 99999);
         if (n < 0) error("ERROR reading from socket");
-        //printf("%s\n",buffer);
-        if (strcmp("file transfer finished", buffer)) {
-            //printf("%lu\n", strlen(buffer));
-            //fputs(buffer, file);
-            fwrite(buffer, 1, read_size, file);
-            //printf("buffer : %lu\n", sizeof(buffer));
+    
+        if (strcmp("file transfer finished", chunk_buffer)) {
+            // transfering haven't finished, 
+            // fwrite chunk_buffer with read_size byte to receiver.X
+            fwrite(chunk_buffer, 1, read_size, file);
+            // show percentage and sys time(in microsecond)
             percent += 100.0 / NUM_CHUNK;
             if (percent <= 100) {
                 printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-                print_current_time_with_ms();
+                print_current_time_with_us();
             }
         } else {
+            // transfer finished.
             printf("tcp_recv() loop break\n");
             fclose(file);
             break;
         }
+
+        // confirm message: tell server a file chunk has been received.
         n = write(sockfd,"I got your message",18);
         if (n < 0) error("ERROR writing to socket");
     }
@@ -260,25 +277,24 @@ int udp_send(int argc, char *argv[]){
     int n;
 
     int chunk_size;
-    char recvbuf[1024] = {0};
+    char recvbuf[1024] = {0};  // receiving the first call from client
     char file_ext[10];
     int write_size;
-    char *buffer_ptr;
+    char *chunk_buffer;
     char confirm_buffer[256];
     FILE *file;
-    size_t nread;
 
     file = fopen(argv[5], "r");
-    if (!file)
-        error("ERROR : opening file.\n");
+    if (!file) error("ERROR : opening file.\n");
     
+    // determine file length, chunk_size, then malloc chunk_buffer 
     size_t pos = ftell(file);    // Current position
     fseek(file, 0, SEEK_END);    // Go to end
     size_t length = ftell(file); // read the position which is the size
     fseek(file, pos, SEEK_SET);  // restore original position
     printf("length = %zu\n", length);
     chunk_size = length / NUM_CHUNK;
-    buffer_ptr = (char *)malloc(chunk_size);
+    chunk_buffer = (char *)malloc(chunk_size);
 
 
     //////// create socket and connect with client
@@ -311,34 +327,37 @@ int udp_send(int argc, char *argv[]){
     if (n < 0) error("ERROR : sendto()");   
     
     while (1) {
-        bzero(buffer_ptr, chunk_size);
-        int bytes_read = fread(buffer_ptr, 1, chunk_size, file);
+
+        // fread a file chunk to chunk_buffer
+        bzero(chunk_buffer, chunk_size);
+        int bytes_read = fread(chunk_buffer, 1, chunk_size, file);
 
         if (bytes_read == 0){
+            // fread done, tell clinet that transfering is finished.
             write_size = 22;
             n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
             if (n < 0) error("ERROR : sendto()");   
             n = sendto(sockfd, "file transfer finished", 22, 0, (struct sockaddr *)&peeraddr, peerlen);
             if (n < 0) error("ERROR : sendto()");   
-
+            
             printf("Sender: File transfer finished.\n");
             break;
         }
-        //printf("--- %d \n", bytes_read);
 
+        // write a file chunk to client (sending the chunk size first)
         write_size = bytes_read;
         n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
         if (n < 0) error("ERROR : sendto()");   
-        n = sendto(sockfd, buffer_ptr, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
+        n = sendto(sockfd, chunk_buffer, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
         if (n < 0) error("ERROR : sendto()");   
 
+        // read confirm message from client
         bzero(confirm_buffer,255);
         n = recvfrom(sockfd, confirm_buffer, sizeof(confirm_buffer), 0, (struct sockaddr *)&peeraddr, &peerlen);
         if (n == -1 && errno != EINTR)
             ERR_EXIT("recvfrom error");    
     }
 
-    // close(newsockfd);
     close(sockfd);
 
     return 0;
@@ -355,7 +374,7 @@ int udp_recv(int argc, char *argv[]){
     char file_name[50];
     char file_ext[10];
     int read_size;
-    char buffer[100000]; // may not enough
+    char chunk_buffer[100000]; // may not enough
 
     float percent = 0;
     FILE *file;
@@ -381,20 +400,19 @@ int udp_recv(int argc, char *argv[]){
          (char *)&servaddr.sin_addr.s_addr,
          server->h_length);
 
-    ////// write and read
-
     // call the server
     if (DEBUG) printf("call the server\n");
     n = sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
     if (n < 0) error("ERROR : sendto()");   
 
-    // recv the file extension
+    // recv file extension
     bzero(file_ext,sizeof(file_ext));
     n = recvfrom(sockfd, &file_ext, sizeof(file_ext), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
 
+    // open receiver.X
     file = fopen(file_name,"w");
     if (file == NULL){
         printf("Unable to create file.\n");
@@ -403,25 +421,36 @@ int udp_recv(int argc, char *argv[]){
 
     while (1){
         if (DEBUG) printf("in udp_recv() while\n");
+
+        // read the chunk size
         n = recvfrom(sockfd, &read_size, sizeof(read_size), 0, NULL, NULL);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
         if (DEBUG) printf("in udp_recv() after recv read_size\n");
-        bzero(buffer,99999);
-        n = recvfrom(sockfd, buffer, sizeof(buffer), 0, NULL, NULL);
+
+        // read a chunk
+        bzero(chunk_buffer,99999);
+        n = recvfrom(sockfd, chunk_buffer, sizeof(chunk_buffer), 0, NULL, NULL);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-        if (DEBUG) printf("in udp_recv() after recv content(i.e. buffer)\n");
-        if (strcmp("file transfer finished", buffer)) {
-            fwrite(buffer, 1, read_size, file);
+        if (DEBUG) printf("in udp_recv() after recv content(i.e. chunk_buffer)\n");
+
+        if (strcmp("file transfer finished", chunk_buffer)) {
+            // transfering haven't finished, 
+            // fwrite chunk_buffer with read_size byte to receiver.X
+            fwrite(chunk_buffer, 1, read_size, file);
+            // show percentage and sys time(in microsecond)
             percent += 100.0 / NUM_CHUNK;
             if (percent <= 100) {
                 printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-                print_current_time_with_ms();
+                print_current_time_with_us();
             }
         } else {
+            // transfering finished
             printf("tcp_recv() loop break\n");
             fclose(file);
             break;
         }
+
+        // confirm message: tell server a file chunk has been received.
         n = sendto(sockfd, "I got your message",18, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
         if (n < 0) error("ERROR : sendto()");   
     }
