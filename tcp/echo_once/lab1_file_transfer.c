@@ -7,9 +7,9 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
-#define NUM_CHUNK 20
+#define NUM_CHUNK 100
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -19,6 +19,9 @@
 #include <time.h>
 
 #include<errno.h>
+
+#include <sys/ioctl.h>
+
 
 #define ERR_EXIT(m) \
     do { \
@@ -102,6 +105,7 @@ int tcp_send(int argc, char *argv[]) {
     fseek(file, pos, SEEK_SET);  // restore original position
     printf("file length = %zu\n", file_length);
     full_chunk_size = file_length / NUM_CHUNK;
+    if (DEBUG) printf("full_chunk_size = %d\n", full_chunk_size);
     // both of (file_length) and NUM_CHUNK are int, so:
     //      1. (file_length) is equal to (full_chunk_size * NUM_CHUNK + offset)
     //      2. there may be (NUM_CHUNK + 1) chunks if the offset isn't 0
@@ -148,7 +152,7 @@ int tcp_send(int argc, char *argv[]) {
 
         if (bytes_read == 0){
             // all file contents are read, tell clinet that transfering is finished.
-            write_size = 22;
+            write_size = htonl(22);
             n = write(clisockfd, &write_size, sizeof(write_size));
             if (n < 0) error("ERROR writing to socket"); 
             n = write(clisockfd, "file transfer finished", 22);
@@ -158,9 +162,10 @@ int tcp_send(int argc, char *argv[]) {
         }
 
         // write a file chunk to client (sending the chunk size first)
-        write_size = bytes_read;
+        write_size = htonl(bytes_read);
         n = write(clisockfd, &write_size, sizeof(write_size));
         if (n < 0) error("ERROR writing to socket"); 
+        if (DEBUG) printf("write_size = %zu\n", write_size);
         n = write(clisockfd, chunk_buffer, bytes_read);
         if (n < 0) error("ERROR writing to socket");    
 
@@ -199,8 +204,7 @@ int tcp_recv(int argc, char *argv[]){
     // create socket
     portno = atoi(argv[4]);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) 
-        error("ERROR opening socket");
+    if (sockfd < 0) error("ERROR opening socket");
 
     // get server's host name
     server = gethostbyname(argv[3]);
@@ -225,7 +229,7 @@ int tcp_recv(int argc, char *argv[]){
     // recv file extension
     bzero(file_ext,sizeof(file_ext));
     n = read(sockfd, &file_ext, sizeof(file_ext));
-    if (n < 0) error("ERROR reading from socket");
+    if (n < 0) error("ERROR reading from socket 1");
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
 
@@ -237,10 +241,20 @@ int tcp_recv(int argc, char *argv[]){
     }
 
     while (1){
-        
+        if (DEBUG) printf("---------------------\n");
         // read the chunk size
+        bzero(&read_size, sizeof(read_size));
+        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
         n = read(sockfd, &read_size, sizeof(read_size));
-        if (n < 0) error("ERROR reading from socket");
+        if (DEBUG) printf("SUPPOSE SIZE, n = %d\n", n);
+        if (n < 0) error("ERROR reading from socket 2");
+        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
+        read_size = ntohl(read_size);
+        if (DEBUG) printf("just in while, read_size = %d\n", read_size);
+        if (DEBUG) {
+            if (read_size != 20229)
+                printf("==============================================================\n");
+        }
 
         if (first_chunk_flag) {
             // the first chunk sent from server has the size (full_chunk_size) mentioned in tcp_send()
@@ -251,10 +265,32 @@ int tcp_recv(int argc, char *argv[]){
             first_chunk_flag = 0;
         }
 
-        // read a chunk
+        // read a chunk   
+
+        int count;
+        do {
+            ioctl(sockfd, FIONREAD, &count);
+        } while (count < read_size);
+
         bzero(chunk_buffer, full_chunk_size);
         n = read(sockfd, chunk_buffer, read_size);
-        if (n < 0) error("ERROR reading from socket");
+        if (DEBUG) printf("SUPPOSE CHUNK, n = %d\n", n);
+        if (n < 0) error("ERROR reading from socket 3");
+
+        if (DEBUG && n < read_size) printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+
+        // //if (DEBUG) printf("strlen(chunk_buffer) = %d\n", strlen(chunk_buffer));    
+        // if (n < read_size) {
+            
+        //     //char tmp[read_size];
+        //     //bzero(tmp, read_size);
+        //     //n = read(sockfd, tmp, read_size - n);
+        //     //strcat(chunk_buffer, tmp);
+        //     //if (DEBUG) printf("strlen(chunk_buffer) = %d\n", strlen(chunk_buffer));
+        //     if (DEBUG) printf("SUPPOSE REST-CHUNK, n = %d\n", n);
+        //     if (DEBUG) printf("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+        //     if (n < 0) error("ERROR reading from socket 3.1");
+        // }
     
         if (strcmp("file transfer finished", chunk_buffer)) {
             // transfering haven't finished, 
@@ -262,6 +298,7 @@ int tcp_recv(int argc, char *argv[]){
             // fwrite chunk_buffer with read_size byte to receiver.X
             // (the main reason of reading the size of the following chunk every time is to
             // fwrite with the correct size, otherwise, img file may be damaged)
+            if (DEBUG) printf("before fwrite(), read_size = %d\n", read_size);
             fwrite(chunk_buffer, 1, read_size, file);
 
             // show percentage and sys time(in microsecond)
@@ -274,7 +311,7 @@ int tcp_recv(int argc, char *argv[]){
             }
         } else {
             // transfer finished.
-            printf("tcp_recv() loop break\n");
+            printf("Receiver: file transfer finished\n");
             fclose(file);
             break;
         }
@@ -309,7 +346,7 @@ int udp_send(int argc, char *argv[]){
     file = fopen(argv[5], "r");
     if (!file) error("ERROR : opening file.\n");
     
-    // determine file file_length, full_chunk_size, then malloc chunk_buffer 
+    // determine file length, full_chunk_size, then malloc chunk_buffer 
     size_t pos = ftell(file);    // Current position
     fseek(file, 0, SEEK_END);    // Go to end
     size_t file_length = ftell(file); // read the position which is the size
@@ -475,7 +512,7 @@ int udp_recv(int argc, char *argv[]){
             }
         } else {
             // transfering finished
-            printf("tcp_recv() loop break\n");
+            printf("Receiver: file transfer finished\n");
             fclose(file);
             break;
         }
