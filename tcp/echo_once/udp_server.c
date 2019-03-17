@@ -32,8 +32,7 @@ void echo_ser(int sock)
 
         peerlen = sizeof(peeraddr);
         memset(recvbuf, 0, sizeof(recvbuf));
-        n = recvfrom(sock, recvbuf, sizeof(recvbuf), 0,
-                     (struct sockaddr *)&peeraddr, &peerlen);
+        n = recvfrom(sock, recvbuf, sizeof(recvbuf), 0, (struct sockaddr *)&peeraddr, &peerlen);
         if (n == -1)
         {
 
@@ -46,8 +45,7 @@ void echo_ser(int sock)
         {
 
             fputs(recvbuf, stdout);
-            sendto(sock, recvbuf, n, 0,
-                   (struct sockaddr *)&peeraddr, peerlen);
+            sendto(sock, recvbuf, n, 0, (struct sockaddr *)&peeraddr, peerlen);
         }
     }
     close(sock);
@@ -62,7 +60,7 @@ int main(void)
     struct sockaddr_in servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(5188);
+    servaddr.sin_port = htons(5188);   
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if (bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
