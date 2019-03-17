@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#define DEBUG 0
+
 #define NUM_CHUNK 20
 
 #define _POSIX_C_SOURCE 200809L
@@ -179,7 +181,7 @@ int tcp_recv(int argc, char *argv[]){
     char file_name[50];
     FILE *file;
 
-    int percent = 0;
+    float percent = 0;
     time_t t = time(NULL);
     struct tm tm = *localtime(&t);
 
@@ -229,11 +231,9 @@ int tcp_recv(int argc, char *argv[]){
             //fputs(buffer, file);
             fwrite(buffer, 1, read_size, file);
             //printf("buffer : %lu\n", sizeof(buffer));
-            percent += 5;               // yet : should send the offset first
-            if (percent != 100) {
-                if (percent == 105)
-                    percent = 100;
-                printf("%d%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            percent += 100.0 / NUM_CHUNK;
+            if (percent <= 100) {
+                printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
                 print_current_time_with_ms();
             }
         } else {
@@ -307,7 +307,8 @@ int udp_send(int argc, char *argv[]){
     // send file extension
     bzero(file_ext, sizeof(file_ext));
     strcpy(file_ext, get_filename_ext(argv[5]));
-    sendto(sockfd, &file_ext, sizeof(file_ext), 0, (struct sockaddr *)&peeraddr, peerlen);
+    n = sendto(sockfd, &file_ext, sizeof(file_ext), 0, (struct sockaddr *)&peeraddr, peerlen);
+    if (n < 0) error("ERROR : sendto()");   
     
     while (1) {
         bzero(buffer_ptr, chunk_size);
@@ -315,17 +316,21 @@ int udp_send(int argc, char *argv[]){
 
         if (bytes_read == 0){
             write_size = 22;
-            sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
-            sendto(sockfd, "file transfer finished", 22, 0, (struct sockaddr *)&peeraddr, peerlen);
-            
+            n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
+            if (n < 0) error("ERROR : sendto()");   
+            n = sendto(sockfd, "file transfer finished", 22, 0, (struct sockaddr *)&peeraddr, peerlen);
+            if (n < 0) error("ERROR : sendto()");   
+
             printf("Sender: File transfer finished.\n");
             break;
         }
         //printf("--- %d \n", bytes_read);
 
         write_size = bytes_read;
-        sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
-        sendto(sockfd, buffer_ptr, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
+        n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
+        if (n < 0) error("ERROR : sendto()");   
+        n = sendto(sockfd, buffer_ptr, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
+        if (n < 0) error("ERROR : sendto()");   
 
         bzero(confirm_buffer,255);
         n = recvfrom(sockfd, confirm_buffer, sizeof(confirm_buffer), 0, (struct sockaddr *)&peeraddr, &peerlen);
@@ -352,7 +357,7 @@ int udp_recv(int argc, char *argv[]){
     int read_size;
     char buffer[100000]; // may not enough
 
-    int percent = 0;
+    float percent = 0;
     FILE *file;
 
     time_t t = time(NULL);
@@ -379,7 +384,9 @@ int udp_recv(int argc, char *argv[]){
     ////// write and read
 
     // call the server
-    sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    if (DEBUG) printf("call the server\n");
+    n = sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    if (n < 0) error("ERROR : sendto()");   
 
     // recv the file extension
     bzero(file_ext,sizeof(file_ext));
@@ -395,18 +402,19 @@ int udp_recv(int argc, char *argv[]){
     }
 
     while (1){
+        if (DEBUG) printf("in udp_recv() while\n");
         n = recvfrom(sockfd, &read_size, sizeof(read_size), 0, NULL, NULL);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
+        if (DEBUG) printf("in udp_recv() after recv read_size\n");
         bzero(buffer,99999);
         n = recvfrom(sockfd, buffer, sizeof(buffer), 0, NULL, NULL);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
+        if (DEBUG) printf("in udp_recv() after recv content(i.e. buffer)\n");
         if (strcmp("file transfer finished", buffer)) {
             fwrite(buffer, 1, read_size, file);
-            percent += 5;               // yet : should send the offset first
-            if (percent != 100) {
-                if (percent == 105)
-                    percent = 100;
-                printf("%d%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            percent += 100.0 / NUM_CHUNK;
+            if (percent <= 100) {
+                printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
                 print_current_time_with_ms();
             }
         } else {
@@ -414,7 +422,8 @@ int udp_recv(int argc, char *argv[]){
             fclose(file);
             break;
         }
-        sendto(sockfd, "I got your message",18, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+        n = sendto(sockfd, "I got your message",18, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+        if (n < 0) error("ERROR : sendto()");   
     }
 
     close(sockfd);
