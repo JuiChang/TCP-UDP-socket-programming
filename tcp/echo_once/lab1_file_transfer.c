@@ -9,7 +9,7 @@
 
 #define DEBUG 1
 
-#define NUM_CHUNK 100
+#define NUM_CHUNK 20
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -33,6 +33,7 @@
 void print_current_time_with_us (void);
 void error(const char *msg);
 const char *get_filename_ext(const char *filename);
+void udp_subchunk_size(int file_length, int num_chunk, int *subchunk_size, int *num_subchunk);
 
 int tcp_send(int argc, char *argv[]); // server
 int tcp_recv(int argc, char *argv[]); // client
@@ -79,6 +80,17 @@ const char *get_filename_ext(const char *filename) {
     const char *dot = strrchr(filename, '.');
     if(!dot || dot == filename) return "";
     return dot + 1;
+}
+
+void udp_subchunk_size(int file_length, int num_chunk, int *subchunk_size, int *num_subchunk) {
+    *subchunk_size = 0;
+    *num_subchunk = 1;
+    for (*num_subchunk = 1; (file_length / (num_chunk * *num_subchunk) > 10000); ++*num_subchunk) {
+        if (DEBUG) printf("*num_subchunk = %d\n", *num_subchunk);
+        if (DEBUG) printf("file_length / (num_chunk * *num_subchunk = %d\n", file_length / (num_chunk * *num_subchunk));
+    }
+    *subchunk_size = file_length / (num_chunk * *num_subchunk);
+    if (DEBUG) printf("*subchunk_size = %d\n", *subchunk_size);
 }
 
 int tcp_send(int argc, char *argv[]) {
@@ -256,6 +268,7 @@ int tcp_recv(int argc, char *argv[]){
         }
 
         // read a chunk   
+        // check amount of data available for sockfd
         int count;
         do {
             ioctl(sockfd, FIONREAD, &count);
@@ -324,7 +337,9 @@ int udp_send(int argc, char *argv[]){
     size_t file_length = ftell(file); // read the position which is the size
     fseek(file, pos, SEEK_SET);  // restore original position
     printf("file length = %zu\n", file_length);
-    full_chunk_size = file_length / NUM_CHUNK;
+    int num_subchunk = 0;
+    udp_subchunk_size(file_length, NUM_CHUNK, &full_chunk_size, &num_subchunk);
+    //full_chunk_size = file_length / NUM_CHUNK;
     chunk_buffer = (char *)malloc(full_chunk_size);
 
 
@@ -356,12 +371,17 @@ int udp_send(int argc, char *argv[]){
     strcpy(file_ext, get_filename_ext(argv[5]));
     n = sendto(sockfd, &file_ext, sizeof(file_ext), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()");   
+
+    // send num_subchunk
+    n = sendto(sockfd, &num_subchunk, sizeof(num_subchunk), 0, (struct sockaddr *)&peeraddr, peerlen);
+    if (n < 0) error("ERROR : sendto()"); 
     
     while (1) {
 
         // fread a file chunk to chunk_buffer
         bzero(chunk_buffer, full_chunk_size);
         int bytes_read = fread(chunk_buffer, 1, full_chunk_size, file);
+        if (DEBUG) printf("bytes_read = %d\n", bytes_read);
 
         if (bytes_read == 0){
             // all file contents are read, tell clinet that transfering is finished.
@@ -378,9 +398,9 @@ int udp_send(int argc, char *argv[]){
         // write a file chunk to client (sending the chunk size first)
         write_size = bytes_read;
         n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
-        if (n < 0) error("ERROR : sendto()");   
+        if (n < 0) error("ERROR : sendto() 1");   
         n = sendto(sockfd, chunk_buffer, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
-        if (n < 0) error("ERROR : sendto()");   
+        if (n < 0) error("ERROR : sendto() 2");   
 
         // read confirm message from client
         bzero(confirm_buffer,255);
@@ -452,6 +472,12 @@ int udp_recv(int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
 
+    // recv num_subchunk
+    int num_subchunk = 0;
+    int tmp_num_subchunk = 0;
+    n = recvfrom(sockfd, &num_subchunk, sizeof(num_subchunk), 0, NULL, NULL);
+    if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
+
     while (1){
         if (DEBUG) printf("in udp_recv() while\n");
 
@@ -467,6 +493,12 @@ int udp_recv(int argc, char *argv[]){
         }
 
         // read a chunk
+        // check amount of data available for sockfd
+        int count;
+        do {
+            ioctl(sockfd, FIONREAD, &count);
+        } while (count < read_size);
+
         bzero(chunk_buffer, full_chunk_size);
         n = recvfrom(sockfd, chunk_buffer, read_size, 0, NULL, NULL);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
@@ -477,11 +509,16 @@ int udp_recv(int argc, char *argv[]){
             // fwrite chunk_buffer with read_size byte to receiver.X
             fwrite(chunk_buffer, 1, read_size, file);
             // show percentage and sys time(in microsecond)
-            percent += 100.0 / NUM_CHUNK;
-            if (percent <= 100) {
-                printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-                print_current_time_with_us();
+            ++tmp_num_subchunk;
+            if (tmp_num_subchunk == num_subchunk) {
+                percent += 100.0 / NUM_CHUNK;
+                if (percent <= 100) {
+                    printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+                    print_current_time_with_us();
+                }
+                tmp_num_subchunk = 0;
             }
+            
         } else {
             // transfering finished
             printf("Receiver: file transfer finished\n");
