@@ -7,7 +7,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 #define NUM_CHUNK 20
 
@@ -261,6 +261,7 @@ int tcp_recv(int argc, char *argv[]){
     }
 
     while (1){
+        if (DEBUG) printf("in tcp_recv() while-------\n");
         // except boundary conditions, 
         // the workflow of this while loop :
         // "read chunk size" --> "read chunk" --> "file write" --> "write confirm msg"
@@ -270,6 +271,7 @@ int tcp_recv(int argc, char *argv[]){
         n = read(sockfd, &read_size, sizeof(read_size));
         if (n < 0) error("ERROR reading from socket 2");
         read_size = ntohl(read_size);
+        if (DEBUG) printf("read size = %d\n", read_size);
 
         if (first_chunk_flag) { // boundary condidiotn (initial)
             // the first chunk sent from server has the size (full_chunk_size) mentioned in tcp_send()
@@ -289,6 +291,8 @@ int tcp_recv(int argc, char *argv[]){
 
         // read a chunk   
         bzero(chunk_buffer, full_chunk_size);
+        //printf("strlen(chunk_buffer) = %d\n", strlen(chunk_buffer));
+        //memset(chunk_buffer, '\0', full_chunk_size);
         n = read(sockfd, chunk_buffer, read_size);
         if (n < 0) error("ERROR reading from socket 3");
 
@@ -298,7 +302,8 @@ int tcp_recv(int argc, char *argv[]){
             // fwrite chunk_buffer with read_size byte to receiver.X
             // (the main reason of reading the size of the following chunk every time is to
             // fwrite with the correct size, otherwise, img file may be damaged)
-            fwrite(chunk_buffer, 1, read_size, file);
+            int s = fwrite(chunk_buffer, 1, full_chunk_size, file);
+            if (DEBUG) printf("s = %d\n", s);
 
             // show percentage and sys time(in microsecond)
             percent += 100.0 / NUM_CHUNK;
