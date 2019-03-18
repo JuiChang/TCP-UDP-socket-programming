@@ -163,15 +163,12 @@ int tcp_send(int argc, char *argv[]) {
     if (n < 0) error("ERROR writing to socket");
 
     while (1) {
-        // except boundary conditions, 
-        // the workflow of this while loop :
-        // file read --> write chunk size --> write chunk --> read confirm msg
 
         // fread a file chunk to chunk_buffer
         bzero(chunk_buffer, full_chunk_size);
         int bytes_read = fread(chunk_buffer, 1, full_chunk_size, file);
 
-        if (bytes_read == 0){ // boundary condition (last)
+        if (bytes_read == 0){
             // all file contents are read, tell clinet that transfering is finished.
             write_size = htonl(22);
             n = write(clisockfd, &write_size, sizeof(write_size));
@@ -261,17 +258,13 @@ int tcp_recv(int argc, char *argv[]){
     }
 
     while (1){
-        // except boundary conditions, 
-        // the workflow of this while loop :
-        // "read chunk size" --> "read chunk" --> "file write" --> "write confirm msg"
-
         // read the chunk size
         bzero(&read_size, sizeof(read_size));
         n = read(sockfd, &read_size, sizeof(read_size));
         if (n < 0) error("ERROR reading from socket 2");
         read_size = ntohl(read_size);
 
-        if (first_chunk_flag) { // boundary condidiotn (initial)
+        if (first_chunk_flag) {
             // the first chunk sent from server has the size (full_chunk_size) mentioned in tcp_send()
             // which is >= (offset, the last chunk size) mentioned in tcp_send()
             // so we malloc chunk_buffer with the size of the first chunk
@@ -280,14 +273,13 @@ int tcp_recv(int argc, char *argv[]){
             first_chunk_flag = 0;
         }
 
-        
+        // read a chunk   
         // check amount of data available for sockfd
         int count;
         do {
             ioctl(sockfd, FIONREAD, &count);
         } while (count < read_size);
 
-        // read a chunk   
         bzero(chunk_buffer, full_chunk_size);
         n = read(sockfd, chunk_buffer, read_size);
         if (n < 0) error("ERROR reading from socket 3");
@@ -308,7 +300,7 @@ int tcp_recv(int argc, char *argv[]){
                 printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
                 print_current_time_with_us();
             }
-        } else { // boundary condition (last)
+        } else {
             // transfer finished.
             printf("Receiver: file transfer finished\n");
             fclose(file);
@@ -326,7 +318,7 @@ int tcp_recv(int argc, char *argv[]){
 }
 
 int udp_send(int argc, char *argv[]){
-    
+    printf("udp_send()\n");
     int sockfd, portno;
     socklen_t clilen;
     struct sockaddr_in serv_addr;
@@ -442,7 +434,7 @@ int udp_send(int argc, char *argv[]){
 }
 
 int udp_recv(int argc, char *argv[]){
-    
+    printf("udp_recv()\n");
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
