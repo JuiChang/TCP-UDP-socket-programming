@@ -469,7 +469,7 @@ int udp_send(int argc, char *argv[]){
     while (1) {
         // except boundary conditions, 
         // the workflow of this while loop :
-        // file read --> write chunk size --> write chunk --> read confirm msg
+        // file read --> write chunk --> read confirm msg
 
         // fread a file chunk to chunk_buffer
         if (DEBUG) printf("ftell(file) = %zu\n", ftell(file));
@@ -479,22 +479,12 @@ int udp_send(int argc, char *argv[]){
         if (DEBUG) printf("bytes_read = %d\n", bytes_read);
 
         // boundary condition (last)
-        if (bytes_read == 0){
-            // // all file contents are read, tell clinet that transfering is finished.
-            // write_size = 22;
-            // n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
-            // if (n < 0) error("ERROR : sendto()");   
-            // n = sendto(sockfd, "file transfer finished", 22, 0, (struct sockaddr *)&peeraddr, peerlen);
-            // if (n < 0) error("ERROR : sendto()");   
-            
+        if (bytes_read == 0){ 
             printf("Sender: File transfer finished.\n");
             break;
         }
 
-        // // write a file chunk to client (sending the chunk size first)
-        // write_size = bytes_read;
-        // n = sendto(sockfd, &write_size, sizeof(write_size), 0, (struct sockaddr *)&peeraddr, peerlen);
-        // if (n < 0) error("ERROR : sendto() 1");   
+        // write a file chunk to client 
         n = sendto(sockfd, chunk_buffer, bytes_read, 0, (struct sockaddr *)&peeraddr, peerlen);  
         if (n < 0) error("ERROR : sendto() 2");   
 
@@ -643,20 +633,6 @@ int udp_recv(int argc, char *argv[]){
             printf("test_count = %d\n", test_count);
         }
 
-        // // read the chunk size
-        // n = recvfrom(sockfd, &read_size, sizeof(read_size), 0, NULL, NULL);
-        // if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-        // if (DEBUG) printf("in udp_recv() after recv read_size\n");
-        // if (DEBUG) printf("read_size = %d\n", read_size);
-
-        // // boundary condition (initial)
-        // // determine size of chunk_buffer
-        // if (first_chunk_flag) {
-        //     full_chunk_size = read_size;
-        //     chunk_buffer = (char *)malloc(full_chunk_size);
-        //     first_chunk_flag = 0;
-        // }
-
         // check amount of data available for sockfd
         int supposed_size;
         if (chunk_count < num_full_chunk) {
@@ -670,37 +646,17 @@ int udp_recv(int argc, char *argv[]){
         int read_chunk_and_file_write = 1;
         ioctl(sockfd, FIONREAD, &count);
 
-        if (count < supposed_size) {
-            if (DEBUG) printf("first check : count = %d\n", count);
-            // the chunk may loss,
-            // however, the chunk may just havn't totally arrive,
-            // so sleep for 1 milliseconds and check again.
-            usleep(1000000);
-            if (DEBUG) printf("usleep(100) usleep(100) usleep(100) usleep(100) usleep(100) \n");
-
-            ioctl(sockfd, FIONREAD, &count);
-            if (count < read_size) { // second check
-                if (DEBUG) printf("second check : count = %d\n", count);
-                // assert that the chunk is lost
-                // go to "write confirm msg" to tell server to resend
-                read_chunk_and_file_write = 0;
-                if (DEBUG) printf("need resend. need resend. need resend. need resend. need resend. need resend. \n");
-            }
-        }
-
-        // // check if the chunk sent by server is lost
-        // int count;
-        // int read_chunk_and_file_write = 1;
-        // ioctl(sockfd, FIONREAD, &count);
-        // if (count < read_size) {
+        // if (count < supposed_size) {
+        //     if (DEBUG) printf("first check : count = %d\n", count);
         //     // the chunk may loss,
         //     // however, the chunk may just havn't totally arrive,
         //     // so sleep for 1 milliseconds and check again.
-        //     usleep(1000);
+        //     usleep(1000000);
         //     if (DEBUG) printf("usleep(100) usleep(100) usleep(100) usleep(100) usleep(100) \n");
 
         //     ioctl(sockfd, FIONREAD, &count);
-        //     if (count < read_size) { // double check
+        //     if (count < read_size) { // second check
+        //         if (DEBUG) printf("second check : count = %d\n", count);
         //         // assert that the chunk is lost
         //         // go to "write confirm msg" to tell server to resend
         //         read_chunk_and_file_write = 0;
@@ -743,30 +699,6 @@ int udp_recv(int argc, char *argv[]){
                 }
                 tmp_num_subchunk = 0;
             }
-
-            // if (strcmp("file transfer finished", chunk_buffer)) {
-            //     // transfering haven't finished, 
-
-            //     // fwrite chunk_buffer with read_size byte to receiver.X
-            //     fwrite(chunk_buffer, 1, read_size, file);
-
-            //     // show percentage and sys time(in microsecond)
-            //     ++tmp_num_subchunk;
-            //     if (tmp_num_subchunk == num_subchunk) {
-            //         percent += 100.0 / NUM_CHUNK;
-            //         if (percent <= 100) {
-            //             printf("%.0f%% %d-%d-%d %d:%d:%d\t", percent, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-            //             print_current_time_with_us();
-            //         }
-            //         tmp_num_subchunk = 0;
-            //     }
-                
-            // } else { // boundary condition (last)
-            //     // transfering finished
-            //     printf("Receiver: file transfer finished\n");
-            //     fclose(file);
-            //     break;
-            // }
         }
 
         // confirm message: tell server a file chunk has been received.
