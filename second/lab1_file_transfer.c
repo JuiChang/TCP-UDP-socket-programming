@@ -447,24 +447,19 @@ int udp_send(int argc, char *argv[]){
     memset(file_ext, 0, sizeof(file_ext));
     strcpy(file_ext, get_filename_ext(argv[5]));
     n = sendto(sockfd, &file_ext, sizeof(file_ext), 0, (struct sockaddr *)&peeraddr, peerlen);
-    if (n < 0) error("ERROR : sendto()");  
-    if (DEBUG) printf("n = %d\n", n); 
+    if (n < 0) error("ERROR : sendto()"); 
 
     // send num_subchunk
     n = sendto(sockfd, &num_subchunk, sizeof(num_subchunk), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()"); 
-    if (DEBUG) printf("n = %d\n", n);
 
     // send full_chunk_size, num_full_chunk, offset
     n = sendto(sockfd, &full_chunk_size, sizeof(full_chunk_size), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()"); 
-    if (DEBUG) printf("n = %d\n", n);
     n = sendto(sockfd, &num_full_chunk, sizeof(num_full_chunk), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()"); 
-    if (DEBUG) printf("n = %d\n", n);
     n = sendto(sockfd, &offset, sizeof(offset), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()"); 
-    if (DEBUG) printf("n = %d\n", n);
     
     while (1) {
         // except boundary conditions, 
@@ -558,7 +553,6 @@ int udp_recv(int argc, char *argv[]){
     memset(file_ext, 0, sizeof(file_ext));
     n = recvfrom(sockfd, &file_ext, sizeof(file_ext), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-    if (DEBUG) printf("n = %d\n", n);
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
 
@@ -574,27 +568,20 @@ int udp_recv(int argc, char *argv[]){
     int tmp_num_subchunk = 0;
     n = recvfrom(sockfd, &num_subchunk, sizeof(num_subchunk), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-    if (DEBUG) printf("n = %d\n", n);
 
     // recv full_chunk_size, num_full_chunk, offset
     n = recvfrom(sockfd, &full_chunk_size, sizeof(full_chunk_size), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-    if (DEBUG) printf("n = %d\n", n);
     chunk_buffer = (char *)malloc(full_chunk_size);
     tmp_chunk_buffer = (char *)malloc(full_chunk_size);
 
     n = recvfrom(sockfd, &num_full_chunk, sizeof(num_full_chunk), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-    if (DEBUG) printf("n = %d\n", n);
 
     n = recvfrom(sockfd, &offset, sizeof(offset), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-    if (DEBUG) printf("n = %d\n", n);
 
     while (1){
-        // except boundary conditions, 
-        // the workflow of this while loop :
-        // "read chunk size" --> "read chunk" --> "file write" --> "write confirm msg"
 
         if (DEBUG) printf("\nin udp_recv() while --------\n");
 
@@ -602,10 +589,8 @@ int udp_recv(int argc, char *argv[]){
         int supposed_size;
         if (chunk_count < num_full_chunk) {
             supposed_size = full_chunk_size;
-            if (DEBUG) printf("supposed_size : full_chunk_size = %d\n", full_chunk_size);
         } else {
             supposed_size = offset;
-            if (DEBUG) printf("supposed_size : offset = %d\n", offset);
         }
         int sum_n = 0;
         int file_write_flag = 1;
@@ -614,23 +599,16 @@ int udp_recv(int argc, char *argv[]){
         // if sum-n < supposed_size, file_write_flag = 0
         // in below if : do move from buffer to file (by fwrite) and percenting
         for(int i = 0; i < 5; ++i) {
-            if (DEBUG && i == 1) printf("i == 1 i == 1 i == 1 i == 1 i == 1\n");
-            if (DEBUG) printf("in for : sum_n = %d\n", sum_n);
-            if (DEBUG) printf("in for : full_chunk_size = %d\n", full_chunk_size);
-            if (DEBUG) printf("in for : supposed_size = %d\n", supposed_size);
             if (sum_n == supposed_size)
                 break;
             else if (sum_n > supposed_size) {
                 printf("ERROR: sum_n unexpected value.\n");
                 exit(1);
             }
-            if(DEBUG) printf("before recvfrom\n");
-            sum_n += recvfrom(sockfd, tmp_chunk_buffer + sum_n, supposed_size - sum_n, 0, NULL, NULL); // it's ok
-            if(DEBUG) printf("after recvfrom\n");
+    
+            sum_n += recvfrom(sockfd, tmp_chunk_buffer + sum_n, supposed_size - sum_n, 0, NULL, NULL); 
         }
 
-        if (DEBUG) printf("sum_n = %d\n", sum_n);
-        if (DEBUG) printf("supposed_size = %d\n", supposed_size);
         if (sum_n < supposed_size)
             file_write_flag = 0;
     
