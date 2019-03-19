@@ -30,7 +30,7 @@
         perror(m); \
         exit(EXIT_FAILURE); \
     } while (0)
-
+    
 
 void print_current_time_with_us (void);
 void error(const char *msg);
@@ -255,12 +255,25 @@ int tcp_recv(int argc, char *argv[]){
 
     ////// recv file extension and open receiver.X
 
+    if (DEBUG) {
+        int test_count = 0;
+        ioctl(sockfd, FIONREAD, &test_count);
+        printf("test_count = %d\n", test_count);
+    }
+
     // recv file extension
     bzero(file_ext,sizeof(file_ext));
     n = read(sockfd, &file_ext, sizeof(file_ext));
     if (n < 0) error("ERROR reading from socket 1");
+    if (DEBUG) printf("n = %d\n", n);
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
+
+    if (DEBUG) {
+        int test_count = 0;
+        ioctl(sockfd, FIONREAD, &test_count);
+        printf("test_count = %d\n", test_count);
+    }
 
     // open receiver.X
     file = fopen(file_name,"w");
@@ -273,17 +286,38 @@ int tcp_recv(int argc, char *argv[]){
     bzero(&full_chunk_size, sizeof(full_chunk_size));
     n = read(sockfd, &full_chunk_size, sizeof(full_chunk_size));
     if (n < 0) error("ERROR reading from socket");
+    if (DEBUG) printf("n = %d\n", n);
     chunk_buffer = (char *)malloc(full_chunk_size);
+    
+    if (DEBUG) {
+        int test_count = 0;
+        ioctl(sockfd, FIONREAD, &test_count);
+        printf("test_count = %d\n", test_count);
+    }
 
     bzero(&offset, sizeof(offset));
     n = read(sockfd, &offset, sizeof(offset));
     if (n < 0) error("ERROR reading from socket");
+    if (DEBUG) printf("n = %d\n", n);
+
+    if (DEBUG) {
+        int test_count = 0;
+        ioctl(sockfd, FIONREAD, &test_count);
+        printf("test_count = %d\n", test_count);
+    }
+    
 
     while (1){
         if (DEBUG) printf("in tcp_recv() while-------\n");
         // except boundary conditions, 
         // the workflow of this while loop :
         // "read chunk" --> "file write"
+
+        if (DEBUG) {
+            int test_count = 0;
+            ioctl(sockfd, FIONREAD, &test_count);
+            printf("test_count = %d\n", test_count);
+        }
         
         // check amount of data available for sockfd
         int supposed_size;
@@ -299,12 +333,24 @@ int tcp_recv(int argc, char *argv[]){
             ioctl(sockfd, FIONREAD, &count);
         } while (count < supposed_size);
 
+        if (DEBUG) {
+            int test_count = 0;
+            ioctl(sockfd, FIONREAD, &test_count);
+            printf("test_count = %d\n", test_count);
+        }
+
         // read a chunk   
         bzero(chunk_buffer, full_chunk_size);
         n = read(sockfd, chunk_buffer, full_chunk_size); // it's ok
         if (n < 0) error("ERROR reading from socket 3");
         ++chunk_count;
         if (DEBUG) printf("read a chunk, n = %d\n", n);
+
+        if (DEBUG) {
+            int test_count = 0;
+            ioctl(sockfd, FIONREAD, &test_count);
+            printf("test_count = %d\n", test_count);
+        }
 
         // file writing
         int s = fwrite(chunk_buffer, 1, n, file);
@@ -378,7 +424,8 @@ int udp_send(int argc, char *argv[]){
     if (sockfd < 0)
         error("ERROR opening socket");
     
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    // bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset(&serv_addr, 0, sizeof(serv_addr));
     portno = atoi(argv[4]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -396,7 +443,8 @@ int udp_send(int argc, char *argv[]){
         ERR_EXIT("recvfrom error");
 
     // send file extension
-    bzero(file_ext, sizeof(file_ext));
+    // bzero(file_ext, sizeof(file_ext));
+    memset(file_ext, 0, sizeof(file_ext));
     strcpy(file_ext, get_filename_ext(argv[5]));
     n = sendto(sockfd, &file_ext, sizeof(file_ext), 0, (struct sockaddr *)&peeraddr, peerlen);
     if (n < 0) error("ERROR : sendto()");  
@@ -425,7 +473,8 @@ int udp_send(int argc, char *argv[]){
 
         // fread a file chunk to chunk_buffer
         if (DEBUG) printf("ftell(file) = %zu\n", ftell(file));
-        bzero(chunk_buffer, full_chunk_size);
+        // bzero(chunk_buffer, full_chunk_size);
+        memset(chunk_buffer, 0, full_chunk_size);
         int bytes_read = fread(chunk_buffer, 1, full_chunk_size, file);
         if (DEBUG) printf("bytes_read = %d\n", bytes_read);
 
@@ -450,7 +499,8 @@ int udp_send(int argc, char *argv[]){
         if (n < 0) error("ERROR : sendto() 2");   
 
         // read confirm message from client (check if it's needed to resent)
-        bzero(confirm_buffer,255);
+        // bzero(confirm_buffer,255);
+        memset(confirm_buffer, 0, 255);
         n = recvfrom(sockfd, confirm_buffer, sizeof(confirm_buffer), 0, (struct sockaddr *)&peeraddr, &peerlen);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom error");
         if (!strcmp("resent the chunk size and chunk", confirm_buffer)) {
@@ -520,9 +570,11 @@ int udp_recv(int argc, char *argv[]){
     }
 
     // recv file extension
-    bzero(file_ext,sizeof(file_ext));
+    // bzero(file_ext,sizeof(file_ext));
+    memset(file_ext, 0, sizeof(file_ext));
     n = recvfrom(sockfd, &file_ext, sizeof(file_ext), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
+    if (DEBUG) printf("n = %d\n", n);
     strcpy(file_name, "receiver.");
     strcat(file_name, file_ext);
 
@@ -544,6 +596,7 @@ int udp_recv(int argc, char *argv[]){
     int tmp_num_subchunk = 0;
     n = recvfrom(sockfd, &num_subchunk, sizeof(num_subchunk), 0, NULL, NULL);
     if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
+    if (DEBUG) printf("n = %d\n", n);
 
     if (DEBUG) {
         int test_count = 0;
@@ -616,12 +669,13 @@ int udp_recv(int argc, char *argv[]){
         int count;
         int read_chunk_and_file_write = 1;
         ioctl(sockfd, FIONREAD, &count);
+
         if (count < supposed_size) {
             if (DEBUG) printf("first check : count = %d\n", count);
             // the chunk may loss,
             // however, the chunk may just havn't totally arrive,
             // so sleep for 1 milliseconds and check again.
-            usleep(10000);
+            usleep(1000000);
             if (DEBUG) printf("usleep(100) usleep(100) usleep(100) usleep(100) usleep(100) \n");
 
             ioctl(sockfd, FIONREAD, &count);
@@ -633,6 +687,7 @@ int udp_recv(int argc, char *argv[]){
                 if (DEBUG) printf("need resend. need resend. need resend. need resend. need resend. need resend. \n");
             }
         }
+
         // // check if the chunk sent by server is lost
         // int count;
         // int read_chunk_and_file_write = 1;
@@ -655,14 +710,28 @@ int udp_recv(int argc, char *argv[]){
     
         if (read_chunk_and_file_write) {
             // read a chunk
-            bzero(chunk_buffer, full_chunk_size);
-            n = recvfrom(sockfd, chunk_buffer, read_size, 0, NULL, NULL);
+            //bzero(chunk_buffer, full_chunk_size);
+            memset(chunk_buffer, '\0', full_chunk_size);
+            if (DEBUG) {
+                int test_count = 0;
+                ioctl(sockfd, FIONREAD, &test_count);
+                printf("test_count = %d\n", test_count);
+            }
+            n = recvfrom(sockfd, chunk_buffer, full_chunk_size, 0, NULL, NULL); // it's ok
             ++chunk_count;
             if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom");
-            if (DEBUG) printf("in udp_recv() after recv content(i.e. chunk_buffer)\n");
+            if (DEBUG) printf("in udp_recv() recvfrom : n = %d\n", n);
+
+            if (DEBUG) {
+                int test_count = 0;
+                ioctl(sockfd, FIONREAD, &test_count);
+                printf("test_count = %d\n", test_count);
+            }
 
             // fwrite chunk_buffer with read_size byte to receiver.X
             fwrite(chunk_buffer, 1, n, file);
+            printf("FWrite: %s\n", chunk_buffer);
+            printf("ftell(file) = %ld\n", ftell(file));
 
             // show percentage and sys time(in microsecond)
             ++tmp_num_subchunk;
