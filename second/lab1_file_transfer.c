@@ -7,8 +7,6 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define DEBUG 0
-
 #define NUM_CHUNK 20
 
 #define TCP_CONFIRM 1
@@ -94,11 +92,9 @@ void udp_subchunk_size(int file_length, int num_chunk, int *subchunk_size, int *
     *subchunk_size = 0;
     *num_subchunk = 1;
     for (*num_subchunk = 1; (file_length / (num_chunk * *num_subchunk) > 10000); ++*num_subchunk) {
-        if (DEBUG) printf("*num_subchunk = %d\n", *num_subchunk);
-        if (DEBUG) printf("file_length / (num_chunk * *num_subchunk = %d\n", file_length / (num_chunk * *num_subchunk));
+        ;
     }
     *subchunk_size = file_length / (num_chunk * *num_subchunk);
-    if (DEBUG) printf("*subchunk_size = %d\n", *subchunk_size);
 }
 
 int tcp_send(int argc, char *argv[]) {
@@ -125,7 +121,6 @@ int tcp_send(int argc, char *argv[]) {
     printf("file length = %zu\n", file_length);
     full_chunk_size = file_length / NUM_CHUNK;
     offset = file_length % NUM_CHUNK;
-    if (DEBUG) printf("full_chunk_size = %d\n", full_chunk_size);
     // both of (file_length) and NUM_CHUNK are int, so:
     //      1. (file_length) is equal to (full_chunk_size * NUM_CHUNK + offset)
     //      2. there may be (NUM_CHUNK + 1) chunks if the offset isn't 0
@@ -171,7 +166,6 @@ int tcp_send(int argc, char *argv[]) {
     if (n < 0) error("ERROR writing to socket");
 
     while (1) {
-        if (DEBUG) printf("tcp_send() while ----------\n");
         // except boundary conditions, 
         // the workflow of this while loop :
         // file read --> write chunk
@@ -182,7 +176,6 @@ int tcp_send(int argc, char *argv[]) {
 
         // boundary condition (last)
         if (bytes_read == 0){ // boundary condition (last)
-            if (DEBUG) printf("bytes_read = %d\n", bytes_read);
             printf("Sender: File transfer finished.\n");
             break;
         }
@@ -190,14 +183,12 @@ int tcp_send(int argc, char *argv[]) {
         // write a file chunk to client 
         n = write(clisockfd, chunk_buffer, bytes_read);
         if (n < 0) error("ERROR writing to socket");  
-        if (DEBUG) printf("write() n = %d\n", n); 
 
         if (TCP_CONFIRM) {
             // read confirm message from client
             bzero(confirm_buffer,255);
             n = read(clisockfd,confirm_buffer,255);
             if (n < 0) error("ERROR reading from socket");
-            if (DEBUG) printf("read() n = %d\n", n);
         }
         
     }
@@ -256,7 +247,6 @@ int tcp_recv(int argc, char *argv[]){
     bzero(file_ext,sizeof(file_ext));
     n = read(sockfd, &file_ext, sizeof(file_ext));
     if (n < 0) error("ERROR reading from socket 1");
-    if (DEBUG) printf("n = %d\n", n);
     strcpy(file_name, "tcp_receiver.");
     strcat(file_name, file_ext);
 
@@ -271,16 +261,13 @@ int tcp_recv(int argc, char *argv[]){
     bzero(&full_chunk_size, sizeof(full_chunk_size));
     n = read(sockfd, &full_chunk_size, sizeof(full_chunk_size));
     if (n < 0) error("ERROR reading from socket");
-    if (DEBUG) printf("n = %d\n", n);
     chunk_buffer = (char *)malloc(full_chunk_size);
 
     bzero(&offset, sizeof(offset));
     n = read(sockfd, &offset, sizeof(offset));
     if (n < 0) error("ERROR reading from socket");
-    if (DEBUG) printf("n = %d\n", n);
 
     while (1){
-        if (DEBUG) printf("in tcp_recv() while-------\n");
         // except boundary conditions, 
         // the workflow of this while loop :
         // "read chunk" --> "file write"
@@ -289,10 +276,8 @@ int tcp_recv(int argc, char *argv[]){
         int supposed_size;
         if (chunk_count < NUM_CHUNK) {
             supposed_size = full_chunk_size;
-            if (DEBUG) printf("supposed_size = full_chunk_size\n");
         } else {
             supposed_size = offset;
-            if (DEBUG) printf("supposed_size = offset\n");
         }
         int count;
         do {
@@ -304,11 +289,9 @@ int tcp_recv(int argc, char *argv[]){
         n = read(sockfd, chunk_buffer, full_chunk_size); // it's ok that full_chunk_size > n
         if (n < 0) error("ERROR reading from socket 3");
         ++chunk_count;
-        if (DEBUG) printf("read a chunk, n = %d\n", n);
 
         // file writing
         int s = fwrite(chunk_buffer, 1, n, file);
-        if (DEBUG) printf("s = %d\n", s);
 
         // show percentage and sys time(in microsecond)
         percent += 100.0 / NUM_CHUNK;
@@ -330,7 +313,6 @@ int tcp_recv(int argc, char *argv[]){
             // confirm message: tell server a file chunk has been received.
             n = write(sockfd,"I got your message",18);
             if (n < 0) error("ERROR writing to socket");
-            if (DEBUG) printf("write() n = %d\n", n);
         }
     }
 
@@ -418,10 +400,8 @@ int udp_send(int argc, char *argv[]){
         // file read --> write chunk --> read confirm msg
 
         // fread a file chunk to chunk_buffer
-        if (DEBUG) printf("ftell(file) = %zu\n", ftell(file));
         memset(chunk_buffer, 0, full_chunk_size);
         int bytes_read = fread(chunk_buffer, 1, full_chunk_size, file);
-        if (DEBUG) printf("bytes_read = %d\n", bytes_read);
 
         // boundary condition (last)
         if (bytes_read == 0){ 
@@ -437,11 +417,10 @@ int udp_send(int argc, char *argv[]){
         memset(confirm_buffer, 0, 255);
         n = recvfrom(sockfd, confirm_buffer, sizeof(confirm_buffer), 0, (struct sockaddr *)&peeraddr, &peerlen);
         if (n == -1 && errno != EINTR) ERR_EXIT("recvfrom error");
-        if (!strcmp("resent the chunk size and chunk", confirm_buffer)) {
-            if (DEBUG) printf("Server: got the resent request============\n");
+        if (!strcmp("resent this chunk", confirm_buffer)) {
             fseek(file, ftell(file) - bytes_read, SEEK_SET);
         } else if (!strcmp("I got your message", confirm_buffer)) {
-            if (DEBUG) printf("Server: client got the message\n");
+            ;
         } else {
             printf("invalid confirm message sent from client\n");
             exit(1);
@@ -492,7 +471,6 @@ int udp_recv(int argc, char *argv[]){
          server->h_length);
 
     // call the server
-    if (DEBUG) printf("call the server\n");
     n = sendto(sockfd, sendbuf, strlen(sendbuf), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
     if (n < 0) error("ERROR : sendto()");   
 
@@ -529,9 +507,12 @@ int udp_recv(int argc, char *argv[]){
 
     while (1){
 
-        if (DEBUG) printf("\nin udp_recv() while --------\n");
+        ///// deternine the supposed size to read in this iteration
+        // if we cannot got the supposed recv size of this iteration, 
+        // we conclude that the message is loss,
+        // can we will skip the (fwrite and print percentage) part, and tell sender to resend
 
-        // deternine the supposed size to read in this iteration
+        // determine the supposed receive size in this iteration
         int supposed_size;
         if (chunk_count < num_full_chunk) {
             supposed_size = full_chunk_size;
@@ -556,17 +537,14 @@ int udp_recv(int argc, char *argv[]){
     
             sum_n += recvfrom(sockfd, chunk_buffer + sum_n, supposed_size - sum_n, 0, NULL, NULL); 
         }
-
         if (sum_n < supposed_size)
             file_write_flag = 0;
     
+        //////  fwrite and print percentage
         if (file_write_flag) {
-
             // fwrite chunk_buffer to udp_receiver.X
             ++chunk_count;
             fwrite(chunk_buffer, 1, sum_n, file);
-            // printf("FWrite: %s\n", chunk_buffer);
-            // printf("ftell(file) = %ld\n", ftell(file));
 
             // show percentage and sys time(in microsecond)
             ++tmp_num_subchunk;
@@ -580,18 +558,18 @@ int udp_recv(int argc, char *argv[]){
             }
         }
 
-        // confirm message: tell server a file chunk has been received.
+        ///// confirm message: tell server a file chunk has been received.
         if (file_write_flag) {
             n = sendto(sockfd, "I got your message",18, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
             if (n < 0) error("ERROR : sendto()");   
         } else {
             // if file_write_flag = 0, we didn't got the supposed size.
             // so we skip the fwrite and percenting above, and we need to tell sender to resend
-            n = sendto(sockfd, "resent the chunk size and chunk",31, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+            n = sendto(sockfd, "resent this chunk",17, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
             if (n < 0) error("ERROR : sendto()");   
         }
 
-        // boundary condition (last)
+        ///// boundary condition (last)
         if ((offset == 0 && chunk_count == num_full_chunk) || chunk_count > num_full_chunk) {
             printf("UDP Receiver: file transfer finished\n");
             fclose(file);
